@@ -20,6 +20,16 @@
   (major1) == 4 && (major2) <  14 || \
   (major1) == 4 && (major2) == 14 && (minor) <= 3)
 #endif /* MIN_VERSION_base */
+/* package containers-0.6.5.1 */
+#ifndef VERSION_containers
+#define VERSION_containers "0.6.5.1"
+#endif /* VERSION_containers */
+#ifndef MIN_VERSION_containers
+#define MIN_VERSION_containers(major1,major2,minor) (\
+  (major1) <  0 || \
+  (major1) == 0 && (major2) <  6 || \
+  (major1) == 0 && (major2) == 6 && (minor) <= 5)
+#endif /* MIN_VERSION_containers */
 /* package matrix-0.3.6.1 */
 #ifndef VERSION_matrix
 #define VERSION_matrix "0.3.6.1"
@@ -40,6 +50,16 @@
   (major1) == 1 && (major2) <  2 || \
   (major1) == 1 && (major2) == 2 && (minor) <= 1)
 #endif /* MIN_VERSION_random */
+/* package search-algorithms-0.3.1 */
+#ifndef VERSION_search_algorithms
+#define VERSION_search_algorithms "0.3.1"
+#endif /* VERSION_search_algorithms */
+#ifndef MIN_VERSION_search_algorithms
+#define MIN_VERSION_search_algorithms(major1,major2,minor) (\
+  (major1) <  0 || \
+  (major1) == 0 && (major2) <  3 || \
+  (major1) == 0 && (major2) == 3 && (minor) <= 1)
+#endif /* MIN_VERSION_search_algorithms */
 /* package vector-0.12.3.1 */
 #ifndef VERSION_vector
 #define VERSION_vector "0.12.3.1"

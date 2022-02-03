@@ -40,21 +40,15 @@ analyzeChild ambient index =
       resultList = map (dijkstraAnalyze . fst') childList
    in fResult childList resultList
   where
-    dijkstraAnalyze target = dijkstra (adjFunc target) costFunc ((== target) . fst) (index, [index])
+    dijkstraAnalyze target = dijkstra (adjFunc target) costFunc (== target) index
     adjFunc target current =
-      let condition = (\x -> ((fst' x == target) || isFreePathByAgent x) && notElem (fst' x) (snd current))
-          adjList = catMaybes $ getAdjList (fst current) ambient
-       in map (\x -> (fst' x, fst' x : snd current)) $ filter condition adjList
+      map fst' $ filter (\x -> isFreePathByAgent x || (fst' x == target)) $ catMaybes $ getAdjList current ambient
     costFunc current next
-      | isDirt (getList ambient !! fst next) = 9
+      | isDirt (getList ambient !! next) = 9
       | otherwise = 10
 
-    fResult childList resultList child = do
-      let realResultList = catMaybes resultList
-      let result = find ((== child) . fst) (zip (map fst' childList) realResultList)
-      case result of
-        Nothing -> Nothing
-        Just value -> Just $ second (map fst) $ snd value
+    fResult childList resultList child =
+      snd =<< find ((== child) . fst) (zip (map fst' childList) resultList)
 
 adjDirtPath :: Ambient -> Int -> Int
 adjDirtPath ambient index =
@@ -146,11 +140,7 @@ robotWithChildMove ambient index = do
        in result
 
 pathToCorral :: Ambient -> Int -> Maybe [Int]
-pathToCorral ambient index =
-  let result = bfs adj (condition . (getList ambient !!) . fst) (index, [index])
-   in case result of
-        Nothing -> Nothing
-        Just value -> Just $ map fst value
+pathToCorral ambient = bfs adj (condition . (getList ambient !!))
   where
     condition x = isCorral x && isBeEmpty x
-    adj index = map (\x -> (fst' x, fst' x : snd index)) $ filter isFreePathByAgent $ catMaybes $ getAdjList (fst index) ambient
+    adj index = map fst' $ filter isFreePathByAgent $ catMaybes $ getAdjList index ambient

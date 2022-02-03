@@ -15,6 +15,9 @@ data Perception = Perception
     getAlternativeRoute :: Int
   }
 
+isFreePathByAgent :: IndexOfAmbient -> Bool
+isFreePathByAgent x = isBeEmpty x || isDirt x
+
 getChildList :: Ambient -> [IndexOfAmbient]
 getChildList ambient = filter (\x -> isChild x && not (isCorral x)) $ getList ambient
 
@@ -27,7 +30,9 @@ see ambient index =
     ordPath f =
       let childList = getChildList ambient
           resultList = mapMaybe (f . fst') childList
-       in map fst $ sortOn (Down . fst . snd) $ zip (map fst' childList) resultList
+          pathToCorralByIndex = pathToCorral ambient
+          realResult = filter (isJust . pathToCorralByIndex . last . snd) resultList
+       in map fst $ sortOn (fst . snd) $ zip (map fst' childList) resultList
 
 analyzeChild :: Ambient -> Int -> (Int -> Maybe (Int, [Int]))
 analyzeChild ambient index =
@@ -35,11 +40,11 @@ analyzeChild ambient index =
       resultList = map (dijkstraAnalyze . fst') childList
    in fResult childList resultList
   where
-    dijkstraAnalyze target = dijkstra adjFunc costFunc (== target) index
-    adjFunc current = map fst' $ filter isFreePath $ catMaybes $ getAdjList current ambient
+    dijkstraAnalyze target = dijkstra (adjFunc target) costFunc (== target) index
+    adjFunc target current = map fst' $ filter (\x -> isFreePathByAgent x || (fst' x == target)) $ catMaybes $ getAdjList current ambient
     costFunc current next
-      | isDirt (getList ambient !! next) = 1
-      | otherwise = 2
+      | isDirt (getList ambient !! next) = 9
+      | otherwise = 10
 
     fResult childList resultList child =
       snd =<< find ((== child) . fst) (zip (map fst' childList) resultList)
@@ -47,13 +52,15 @@ analyzeChild ambient index =
 adjDirtPath :: Ambient -> Int -> Int
 adjDirtPath ambient index =
   let adjList = map fst' $ catMaybes $ getAdjList index ambient
-      dirtValue = map (dfsDirt ambient) adjList
+      dirtValue = map (dfsDirt ambient [index]) adjList
    in fst $ maximumBy (comparing snd) $ zip adjList dirtValue
   where
-    dfsDirt ambient index
+    dfsDirt ambient visited index
+      | index `elem` visited = -1
+      | not $ isFreePathByAgent $ getList ambient !! index = -1
       | not $ isDirt $ getList ambient !! index = 0
       | otherwise =
-        let results = map ((+ 1) . dfsDirt ambient . fst') $ catMaybes $ getAdjList index ambient
+        let results = map ((+ 1) . dfsDirt ambient (index : visited) . fst') $ catMaybes $ getAdjList index ambient
          in maximumBy (comparing id) results
 
 -- True if b perception is better of a
@@ -62,45 +69,77 @@ comparePerceptions index a b =
   case (getBestPathTo a index, getBestPathTo b index) of
     (Just aPerception, Nothing) -> False
     (Nothing, _) -> True
-    (Just aPerception, Just bPerception) -> (fst aPerception `div` length (snd aPerception)) >= (fst bPerception `div` length (snd bPerception))
+    (Just aPerception, Just bPerception) -> length (snd aPerception) > length (snd bPerception)
 
 socialize :: Ambient -> [(Int, Perception)] -> [(Int, Int)]
-socialize ambient robotPerception = run []
+socialize ambient robotPerception = run robotPerception []
   where
-    step = head robotPerception
     possibleRoute selected =
       let childList = map fst' $ getChildList ambient
-       in filter (\x -> isNothing $ find ((== x) . snd) selected) childList
-    run robotSelect
-      | length robotPerception == length robotSelect = []
-      | null $ possibleRoute robotSelect = run $ second getAlternativeRoute step : robotSelect
+       in filter (not . (`elem` map snd selected)) childList
+
+    selectBy index condition action
+      | condition $ getList ambient !! index = action
+      | otherwise = (index, index)
+
+    tryMovToAlternativeRoute perception = selectBy (fst perception) (not . isDirt) (second getAlternativeRoute perception)
+    tryMovToChildDirection perception childIndex =
+      let path = snd $ fromJust $ getBestPathTo (snd perception) childIndex
+       in selectBy (fst perception) (\_ -> length path < 3) (second (const (head path)) perception)
+
+    run [] selected = selected
+    run (perception : rest) selected
+      | null $ possibleRoute selected = run rest $ tryMovToAlternativeRoute perception : selected
       | otherwise = do
-        let childFree = possibleRoute robotSelect
-        let childPriority = filter (\x -> isNothing $ find (== x) childFree) $ selectionOrd $ snd step
-        let otherPerceptions = map snd $ filter (\x -> isNothing $ find ((== fst x) . fst) robotSelect) robotPerception
-        let stepPerception = snd step
+        let childFree = possibleRoute selected
+        let childPriority = filter (`elem` childFree) $ selectionOrd $ snd perception
+        let otherPerceptions = map snd rest
+        let stepPerception = snd perception
         case find (\x -> isNothing $ find (comparePerceptions x stepPerception) otherPerceptions) childPriority of
-          Just value -> run $ (fst step, head $ snd $ fromJust $ getBestPathTo (snd step) value) : robotSelect
-          Nothing -> run $ second getAlternativeRoute step : robotSelect
+          Just value -> run rest $ tryMovToChildDirection perception value : selected
+          Nothing -> run rest $ tryMovToAlternativeRoute perception : selected
 
-executeSocialDecision :: [(Int, Int)] -> [(Int, Maybe MemberOfAmbient)]
-executeSocialDecision = concatMap f
+executeSocialDecision :: Ambient -> [(Int, Int)] -> [IndexOfAmbient]
+executeSocialDecision ambient = concatMap f
   where
-    f (x, y) = [(x, Nothing), (y, Just Robot)]
+    f (x, y)
+      | x == y = [(x, Clean, Just Robot)]
+      | isChild $ getList ambient !! y = [setMemberInPlace ambient x Nothing, setMemberInPlace ambient y (Just RobotWithChild)]
+      | otherwise = [setMemberInPlace ambient x Nothing, setMemberInPlace ambient y (Just Robot)]
 
-robotWithChildMove :: Ambient -> Int -> [(Int, Maybe MemberOfAmbient)]
+robotWithChildMove :: Ambient -> Int -> [IndexOfAmbient]
 robotWithChildMove ambient index = do
   let indexOfAmbient = getList ambient !! index
   if condition indexOfAmbient then tryUnchanged else mov
   where
-    condition index = isCorral index && isEmpty index
+    emptySpaces index = filter isBeEmpty $ catMaybes $ getAdjList index ambient
+    condition index = isCorral index && isBeEmpty index && not (null $ emptySpaces $ fst' index)
     tryUnchanged =
-      let emptySpaces = filter isEmpty $ catMaybes $ getAdjList index ambient
-       in if null emptySpaces then [] else [(index, Just Child), (fst' $ head emptySpaces, Just Robot)]
-
+      [ (index, Corral, Just Child),
+        setMemberInPlace ambient (fst' $ head $ emptySpaces index) (Just Robot)
+      ]
     mov =
-      let path = bfs adj (isCorral . (getList ambient !!)) index
+      let path = pathToCorral ambient index
        in case path of
-            Just steps -> [(index, Nothing), (head steps, Just Robot)]
-            Nothing -> []
-    adj index = map fst' $ filter isFreePath $ catMaybes $ getAdjList index ambient
+            Just steps ->
+              let step = if length steps >= 2 then head $ tail steps else head steps
+               in [setMemberInPlace ambient index Nothing, setMemberInPlace ambient step $ Just RobotWithChild]
+            Nothing ->
+              let adjFree = emptySpaces index
+               in leaveChild (getList ambient !! index) adjFree
+
+    leaveChild robot adjFree =
+      let dirtPlace = find (\x -> isDirt x && isBeEmpty x) adjFree
+          cleanPlace = find (\x -> isClean x && isBeEmpty x) adjFree
+          result
+            | isClean robot && isJust dirtPlace = [setMemberInPlace ambient (fst' robot) $ Just Child, setMemberInPlace ambient (fst' $ fromJust dirtPlace) $ Just Robot]
+            | isClean robot && isJust cleanPlace = [setMemberInPlace ambient (fst' robot) $ Just Child, setMemberInPlace ambient (fst' $ fromJust dirtPlace) $ Just Robot]
+            | isDirt robot && isJust cleanPlace = [setMemberInPlace ambient (fst' robot) $ Just Robot, setMemberInPlace ambient (fst' $ fromJust dirtPlace) $ Just Child]
+            | otherwise = []
+       in result
+
+pathToCorral :: Ambient -> Int -> Maybe [Int]
+pathToCorral ambient = bfs adj (condition . (getList ambient !!))
+  where
+    condition x = isCorral x && isBeEmpty x
+    adj index = map fst' $ filter isFreePathByAgent $ catMaybes $ getAdjList index ambient

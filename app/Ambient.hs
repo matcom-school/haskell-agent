@@ -8,11 +8,13 @@ import Data.Maybe
 import System.Random
 import TupleHelper
 
-type AllAmbient = Matrix (SpaceOfAmbient, Maybe MemberOfAmbient)
+type AllAmbient = Matrix IndexOfAmbient
 
-data SpaceOfAmbient = Empty | Corral deriving (Show)
+data SpaceOfAmbient = Clean | Dirt | Corral deriving (Show)
 
-data MemberOfAmbient = Child | Robot | Dirt | Obstacles | RobotWithChild deriving (Show)
+data MemberOfAmbient = Child | Robot | Obstacles | RobotWithChild deriving (Show)
+
+type TupleOfAmbient = (SpaceOfAmbient, Maybe MemberOfAmbient)
 
 type IndexOfAmbient = (Int, SpaceOfAmbient, Maybe MemberOfAmbient)
 
@@ -29,23 +31,23 @@ isRobot (_, _, Just Robot) = True
 isRobot _ = False
 
 isObstacles :: IndexOfAmbient -> Bool
-isObstacles (_, Empty, Just Obstacles) = True
+isObstacles (_, _, Just Obstacles) = True
 isObstacles _ = False
 
 isDirt :: IndexOfAmbient -> Bool
-isDirt (_, Empty, Just Dirt) = True
+isDirt (_, Dirt, _) = True
 isDirt _ = False
+
+isClean :: IndexOfAmbient -> Bool
+isClean (_, Clean, _) = True
+isClean _ = False
 
 isCorral :: IndexOfAmbient -> Bool
 isCorral (_, Corral, _) = True
 isCorral _ = False
 
-isEmpty :: IndexOfAmbient -> Bool
-isEmpty (_, Empty, _) = True
-isEmpty _ = False
-
-isFreePath :: IndexOfAmbient -> Bool
-isFreePath x = isEmpty x || isDirt x
+isBeEmpty :: IndexOfAmbient -> Bool
+isBeEmpty = isNothing . last'
 
 data Ambient = Ambient
   { getChildCount :: Int,
@@ -58,17 +60,17 @@ data Ambient = Ambient
 getValues :: Ambient -> (Int, Int, [IndexOfAmbient])
 getValues a = (getN a, getM a, getList a)
 
-spaceList :: [Maybe MemberOfAmbient]
-spaceList = [Just Dirt, Just Obstacles, Nothing]
+spaceList :: [TupleOfAmbient]
+spaceList = [(Dirt, Just Obstacles), (Clean, Just Obstacles), (Dirt, Nothing), (Dirt, Nothing)]
 
 spaceAccount :: Int
 spaceAccount = length spaceList
 
-mapIntToMemberOfAmbient :: [Int] -> [Maybe MemberOfAmbient]
-mapIntToMemberOfAmbient = map (spaceList !!)
+mapIntToTupleOfAmbient :: [Int] -> [(SpaceOfAmbient, Maybe MemberOfAmbient)]
+mapIntToTupleOfAmbient = map (spaceList !!)
 
-insertMemberToPosition :: [Int] -> Maybe MemberOfAmbient -> [Maybe MemberOfAmbient] -> [Maybe MemberOfAmbient]
-insertMemberToPosition pos member = zipWith (curry (\x -> if fst x `elem` pos then member else snd x)) [0 ..]
+insertTupleOfAmbient :: [Int] -> TupleOfAmbient -> [TupleOfAmbient] -> [TupleOfAmbient]
+insertTupleOfAmbient pos member = zipWith (curry (\x -> if fst x `elem` pos then member else snd x)) [0 ..]
 
 getRandomList :: MonadIO m => Int -> m [Int]
 getRandomList n = replicateM n $ randomRIO (0, spaceAccount - 1)
@@ -83,11 +85,7 @@ getNewRandomPosition top list =
     result
 
 getNNewRandomPosition :: (MonadIO m) => (Int, Int) -> Int -> [Int] -> m [Int]
-getNNewRandomPosition _ 0 _ = return []
-getNNewRandomPosition top n list = do
-  newValue <- getNewRandomPosition top list
-  restList <- getNNewRandomPosition top (n - 1) (newValue : list)
-  return (newValue : restList)
+getNNewRandomPosition top n list = replicateM n $ getNewRandomPosition top list
 
 computeIndexInMatrixToList :: Num a => (a, a, c, a) -> a
 computeIndexInMatrixToList (i, j, n, m) = m * i + j
@@ -96,41 +94,57 @@ ambientToMatrix :: Ambient -> AllAmbient
 ambientToMatrix a =
   let n = getN a
       m = getM a
-      list = map (\(i, s, m) -> (s, m)) $ getList a
+      list = getList a
    in matrix n m $ \(i, j) -> list !! computeIndexInMatrixToList (i -1, j -1, n, m)
+
+generateAmbient :: (MonadIO m) => (Int, Int) -> Int -> [IndexOfAmbient] -> m Ambient
+generateAmbient (n, m) child childAndRobots = do
+  nxmRandomNum <- getRandomList (n * m)
+  let ambientWithOutChidAndRobot = zip [0 ..] $ mapIntToTupleOfAmbient nxmRandomNum
+  return $ Ambient child n m $ map replaceChildAndRobots ambientWithOutChidAndRobot
+  where
+    replaceChildAndRobots (index, (space, member)) =
+      let maybeChildOrRobot = find ((== index) . fst') childAndRobots
+          realMember
+            | index < child = Nothing
+            | otherwise = member
+          realSpace
+            | index < child = Corral
+            | isJust maybeChildOrRobot && isChild (fromJust maybeChildOrRobot) = Clean
+            | otherwise = space
+       in case maybeChildOrRobot of
+            Just (_, _, childOrRobot) -> (index, realSpace, childOrRobot)
+            Nothing -> (index, realSpace, realMember)
 
 createAmbient :: (MonadIO m) => (Int, Int) -> Int -> Int -> m Ambient
 createAmbient (n, m) childCount robotCount = do
-  list <- getRandomList (n * m)
-  childPosList <- getNNewRandomPosition (0, n * m) childCount []
-  robotPosList <- getNNewRandomPosition (childCount + 1, n * m) robotCount childPosList
-  let listWithOutRobotAndChild = mapIntToMemberOfAmbient list
-  let listWithChildAndWithOutRobot = insertMemberToPosition childPosList (Just Child) listWithOutRobotAndChild
-  let listWithChildAndRobot = insertMemberToPosition robotPosList (Just Robot) listWithChildAndWithOutRobot
-  let zipList = zip [0 ..] listWithChildAndRobot
-  return $
-    Ambient childCount n m $
-      map
-        ( \x ->
-            let index = fst x
-                member = snd x
-             in if index < childCount
-                  then (index, Corral, member)
-                  else (index, Empty, member)
-        )
-        zipList
+  childPosList <- getNNewRandomPosition (0, n * m - 1) childCount []
+  robotPosList <- getNNewRandomPosition (childCount + 1, n * m -1) robotCount childPosList
+  generateAmbient (n, m) childCount $ map childFunc childPosList ++ map robotFunc robotPosList
+  where
+    childFunc x = (x, Corral, Just Child)
+    robotFunc x = (x, Clean, Just Robot)
+
+setMemberInPlace :: Ambient -> Int -> Maybe MemberOfAmbient -> IndexOfAmbient
+setMemberInPlace ambient index member = f $ getList ambient !! index
+  where
+    f (index, space, m) = (index, space, member)
+
+setSpaceInPlace :: Ambient -> Int -> SpaceOfAmbient -> IndexOfAmbient
+setSpaceInPlace ambient index space = f $ getList ambient !! index
+  where
+    f (index, s, member) = (index, space, member)
 
 ambientMap :: (IndexOfAmbient -> b) -> Ambient -> [b]
 ambientMap f a =
   let list = getList a
    in map f list
 
-changeAmbient :: [(Int, Maybe MemberOfAmbient)] -> Ambient -> Ambient
+changeAmbient :: [IndexOfAmbient] -> Ambient -> Ambient
 changeAmbient changeList ambient = do
-  let indexes = map fst changeList
-  let members = map snd changeList
+  let indexes = map fst' changeList
   let (n, m, list) = getValues ambient
-  let f = (\(i, s, m) -> if i `elem` indexes then (i, s, members !! fromJust (elemIndex i indexes)) else (i, s, m))
+  let f = (\(i, s, m) -> if i `elem` indexes then changeList !! fromJust (elemIndex i indexes) else (i, s, m))
   Ambient (getChildCount ambient) n m $ map f list
 
 getIndexByIndex :: Int -> Ambient -> (Int, Int)
@@ -162,8 +176,8 @@ getAdjByDirection index ambient direction =
   let (n, m, list) = getValues ambient
       (i, j) = getIndexByIndex index ambient
       (di, dj) = directionToTuple direction
-      newI = i -1 + di
-      newJ = j -1 + dj
+      newI = i + di
+      newJ = j + dj
    in if 0 <= newI && newI < n && 0 <= newJ && newJ < m
         then Just (list !! computeIndexInMatrixToList (newI, newJ, n, m))
         else Nothing

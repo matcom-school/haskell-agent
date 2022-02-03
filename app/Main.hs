@@ -4,6 +4,7 @@ import Agent
 import Ambient
 import Data.Foldable
 import Data.Maybe
+import Data.Ord
 import Data.Set hiding (filter, map)
 import Simulate
 import Statistics
@@ -27,10 +28,14 @@ changeFactorOfAmbient = hourToMin 1
 timeOfSimulation :: Int
 timeOfSimulation = dayToMin 1
 
-doSimulation :: Int -> [Int] -> IO ()
+doSimulation :: (Show a2, Real a2, Ord t, Fractional a2, Num t) => t -> [a2] -> IO ()
 doSimulation simulationIndex lastResult
   | simulationIndex < 30 || variance lastResult > 0.5 = runSimulation simulationIndex lastResult
-  | otherwise = print $ median lastResult
+  | otherwise = do
+    print "Finish Simulation"
+    print $ length lastResult
+    print lastResult
+    print $ median lastResult
   where
     runSimulation index last =
       do
@@ -38,21 +43,45 @@ doSimulation simulationIndex lastResult
         doSimulation (index + 1) (newResult : last)
     variance listResult = 0.3
 
-e :: [Int]
-e = []
-
 main :: IO ()
-main = do
-  -- ambient <- generateAmbient (5, 5) 2 [(1, Corral, Just Child)]
-  -- print $ ambientToMatrix ambient
+main = doSimulation 0 []
 
-  a1 <- createAmbient (5, 5) 2 2
-  print $ ambientToMatrix a1
-  let a2 = changeAmbient [(0, Corral, Just Child)] a1
-  print $ ambientToMatrix a2
+-- main :: IO ()
+-- main = do
+--   let a = maximumBy (comparing id) $ tail [1]
+--   print a
 
--- let a2 = movAllAgents a1
+--   a1 <- createAmbient (5, 5) 2 2
+--   -- a2 <- createAmbient (5, 5) 2 2
+--   -- a3 <- createAmbient (5, 5) 2 2
+--   -- a4 <- createAmbient (5, 5) 2 2
+--   -- a5 <- createAmbient (5, 5) 2 2
+--   -- a6 <- createAmbient (5, 5) 2 2
+--   -- a7 <- createAmbient (5, 5) 2 2
+
+--   a2 <- randomChangeAmbient a1
+--   print $ ambientToMatrix a2
+
+--   a2 <- randomChangeAmbient a1
+--   print $ ambientToMatrix a2
+--   a2 <- randomChangeAmbient a1
+--   print $ ambientToMatrix a2
+--   a2 <- randomChangeAmbient a1
+--   print $ ambientToMatrix a2
+--   a2 <- randomChangeAmbient a1
+--   print $ ambientToMatrix a2
+--   a2 <- randomChangeAmbient a1
+--   print $ ambientToMatrix a2
+--   a2 <- randomChangeAmbient a1
+--   print $ ambientToMatrix a2
+--   a2 <- randomChangeAmbient a1
+--   print $ ambientToMatrix a2
+--   a2 <- randomChangeAmbient a1
+--   print $ ambientToMatrix a2
+
+-- let a2 = changeAmbient [(0, Corral, Just Child)] a1
 -- print $ ambientToMatrix a2
+
 -- let a3 = movAllAgents a2
 -- print $ ambientToMatrix a3
 -- let a4 = movAllAgents a3

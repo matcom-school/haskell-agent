@@ -10,9 +10,9 @@ import TupleHelper
 
 type AllAmbient = Matrix IndexOfAmbient
 
-data SpaceOfAmbient = Clean | Dirt | Corral deriving (Show)
+data SpaceOfAmbient = Clean | Dirt | Corral | Obstacles deriving (Show)
 
-data MemberOfAmbient = Child | Robot | Obstacles | RobotWithChild deriving (Show)
+data MemberOfAmbient = Child | Robot | RobotWithChild deriving (Show)
 
 type TupleOfAmbient = (SpaceOfAmbient, Maybe MemberOfAmbient)
 
@@ -31,7 +31,7 @@ isRobot (_, _, Just Robot) = True
 isRobot _ = False
 
 isObstacles :: IndexOfAmbient -> Bool
-isObstacles (_, _, Just Obstacles) = True
+isObstacles (_, Obstacles, _) = True
 isObstacles _ = False
 
 isDirt :: IndexOfAmbient -> Bool
@@ -47,7 +47,7 @@ isCorral (_, Corral, _) = True
 isCorral _ = False
 
 isBeEmpty :: IndexOfAmbient -> Bool
-isBeEmpty = isNothing . last'
+isBeEmpty index = not (isObstacles index) && (isNothing . last') index
 
 data Ambient = Ambient
   { getChildCount :: Int,
@@ -61,7 +61,7 @@ getValues :: Ambient -> (Int, Int, [IndexOfAmbient])
 getValues a = (getN a, getM a, getList a)
 
 spaceList :: [TupleOfAmbient]
-spaceList = [(Dirt, Just Obstacles), (Clean, Just Obstacles), (Dirt, Nothing), (Dirt, Nothing)]
+spaceList = [(Obstacles, Nothing), (Dirt, Nothing), (Dirt, Nothing)]
 
 spaceAccount :: Int
 spaceAccount = length spaceList
@@ -111,6 +111,7 @@ generateAmbient (n, m) child childAndRobots = do
           realSpace
             | index < child = Corral
             | isJust maybeChildOrRobot && isChild (fromJust maybeChildOrRobot) = Clean
+            | isJust maybeChildOrRobot && isObstacles (1, space, Nothing) = Dirt
             | otherwise = space
        in case maybeChildOrRobot of
             Just (_, _, childOrRobot) -> (index, realSpace, childOrRobot)
@@ -126,7 +127,10 @@ createAmbient (n, m) childCount robotCount = do
     robotFunc x = (x, Clean, Just Robot)
 
 setMemberInPlace :: Ambient -> Int -> Maybe MemberOfAmbient -> IndexOfAmbient
-setMemberInPlace ambient index member = f $ getList ambient !! index
+setMemberInPlace ambient index member
+  | isObstacles (getList ambient !! index) && isChild (1, Clean, member) = (index, Clean, Just Child)
+  | isObstacles (getList ambient !! index) && isJust member = head $ tail []
+  | otherwise = f $ getList ambient !! index
   where
     f (index, space, m) = (index, space, member)
 

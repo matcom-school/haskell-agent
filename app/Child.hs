@@ -26,16 +26,15 @@ childDirectionCondition ambient index dir = do
     Nothing -> Nothing
 
 canMovChildTo :: IndexOfAmbient -> Direction -> Ambient -> Bool
-canMovChildTo (_, _, Nothing) _ _ = True
-canMovChildTo (index, _, Just Obstacles) dir ambient = canMovObstacles index dir ambient
-canMovChildTo _ _ _ = False
+canMovChildTo (index, Obstacles, Nothing) dir ambient = canMovObstacles index dir ambient
+canMovChildTo index _ _ = (isCorral index || isClean index) && isBeEmpty index
 
 canMovObstacles :: Int -> Direction -> Ambient -> Bool
 canMovObstacles index dir ambient = do
   let maybeIndexOfAmbient = getAdjByDirection index ambient dir
   case maybeIndexOfAmbient of
+    Just (nextIndex, Obstacles, Nothing) -> canMovObstacles nextIndex dir ambient
     Just (nextIndex, space, Nothing) -> not $ isCorral (nextIndex, space, Nothing)
-    Just (nextIndex, _, Just Obstacles) -> canMovObstacles nextIndex dir ambient
     _ -> False
 
 getChildAction :: (MonadIO m) => Ambient -> Int -> m (Maybe Action)
@@ -74,8 +73,8 @@ findPlaceOfObstaclesByDirection :: Ambient -> Int -> Direction -> [IndexOfAmbien
 findPlaceOfObstaclesByDirection ambient index dir = do
   let adjPost = getAdjByDirection index ambient dir
   case adjPost of
-    Just (nextIndex, space, Nothing) -> [(nextIndex, Clean, Just Obstacles) | not (isCorral (nextIndex, space, Nothing))]
-    Just (nextIndex, _, Just Obstacles) -> findPlaceOfObstaclesByDirection ambient nextIndex dir
+    Just (nextIndex, Obstacles, Nothing) -> findPlaceOfObstaclesByDirection ambient nextIndex dir
+    Just (nextIndex, space, Nothing) -> [(nextIndex, Obstacles, Nothing) | not (isCorral (nextIndex, space, Nothing))]
     _ -> []
 
 generateDirt :: (MonadIO m) => Ambient -> [Int] -> m [Int]
@@ -91,4 +90,6 @@ generateDirt ambient quadricycle = do
     2 -> return $ generateDirtByRandom freeSpace [firstRandom, secondRandom]
     _ -> return $ generateDirtByRandom freeSpace [firstRandom, secondRandom, threeRandom]
   where
-    generateDirtByRandom freeSpace randomList = map (\x -> fst' $ freeSpace !! x) randomList
+    generateDirtByRandom freeSpace randomList
+      | Prelude.null freeSpace = []
+      | otherwise = map (\x -> fst' $ freeSpace !! x) randomList

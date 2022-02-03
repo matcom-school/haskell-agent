@@ -9,16 +9,17 @@ import Data.Maybe
 import Statistics
 import TupleHelper (fst')
 
-simulate :: (MonadIO m) => (Int, Int) -> (Int, Int) -> Int -> Int -> m Int
+dirtPercent :: Fractional b => [Ambient] -> [b]
+dirtPercent history =
+  let binaryMapDirty = map (\x -> if isDirt x then 1 else 0)
+   in map ((* 100) . median . binaryMapDirty . getList) history
+
+simulate :: (MonadIO m, Fractional b) => (Int, Int) -> (Int, Int) -> Int -> Int -> m b
 simulate (n, m) (childAccount, robotAccount) t totalTime = do
   ambient <- createAmbient (n, m) childAccount robotAccount -- get e0
   historyResult <- run ambient 0 t totalTime -- run with ambient t and total get history
   let listDirtPercent = dirtPercent historyResult
   return $ median listDirtPercent -- value history
-  where
-    dirtPercent history =
-      let binaryMapDirty = map (\x -> if isDirt x then 1 else 0)
-       in map ((* 100) . median . binaryMapDirty . getList) history
 
 run :: (MonadIO m) => Ambient -> Int -> Int -> Int -> m [Ambient]
 run actualAmbient actualTime tFactor tTotal

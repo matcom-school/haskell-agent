@@ -34,34 +34,41 @@ see ambient index =
           realResult = filter (isJust . pathToCorralByIndex . last . snd) resultList
        in map fst $ sortOn (fst . snd) $ zip (map fst' childList) resultList
 
-analyzeChild :: Ambient -> Int -> (Int -> Maybe (Int, [Int]))
+analyzeChild :: (Num cost, Ord cost) => Ambient -> Int -> Int -> Maybe (cost, [Int])
 analyzeChild ambient index =
   let childList = getChildList ambient
       resultList = map (dijkstraAnalyze . fst') childList
    in fResult childList resultList
   where
-    dijkstraAnalyze target = dijkstra (adjFunc target) costFunc (== target) index
-    adjFunc target current = map fst' $ filter (\x -> isFreePathByAgent x || (fst' x == target)) $ catMaybes $ getAdjList current ambient
+    dijkstraAnalyze target = dijkstra (adjFunc target) costFunc ((== target) . fst) (index, [index])
+    adjFunc target current =
+      let condition = (\x -> ((fst' x == target) || isFreePathByAgent x) && notElem (fst' x) (snd current))
+          adjList = catMaybes $ getAdjList (fst current) ambient
+       in map (\x -> (fst' x, fst' x : snd current)) $ filter condition adjList
     costFunc current next
-      | isDirt (getList ambient !! next) = 9
+      | isDirt (getList ambient !! fst next) = 9
       | otherwise = 10
 
-    fResult childList resultList child =
-      snd =<< find ((== child) . fst) (zip (map fst' childList) resultList)
+    fResult childList resultList child = do
+      let realResultList = catMaybes resultList
+      let result = find ((== child) . fst) (zip (map fst' childList) realResultList)
+      case result of
+        Nothing -> Nothing
+        Just value -> Just $ second (map fst) $ snd value
 
 adjDirtPath :: Ambient -> Int -> Int
 adjDirtPath ambient index =
-  let adjList = map fst' $ catMaybes $ getAdjList index ambient
+  let adjList = map fst' $ filter isFreePathByAgent $ catMaybes $ getAdjList index ambient
       dirtValue = map (dfsDirt ambient [index]) adjList
-   in fst $ maximumBy (comparing snd) $ zip adjList dirtValue
+   in if null dirtValue then index else fst $ maximumBy (comparing snd) $ zip adjList dirtValue
   where
     dfsDirt ambient visited index
       | index `elem` visited = -1
-      | not $ isFreePathByAgent $ getList ambient !! index = -1
       | not $ isDirt $ getList ambient !! index = 0
       | otherwise =
-        let results = map ((+ 1) . dfsDirt ambient (index : visited) . fst') $ catMaybes $ getAdjList index ambient
-         in maximumBy (comparing id) results
+        let adjList = filter isFreePathByAgent $ catMaybes $ getAdjList index ambient
+            results = map ((+ 1) . dfsDirt ambient (index : visited) . fst') adjList
+         in if null results then -1000 else maximumBy (comparing id) results
 
 -- True if b perception is better of a
 comparePerceptions :: Int -> Perception -> Perception -> Bool
@@ -112,7 +119,7 @@ robotWithChildMove ambient index = do
   let indexOfAmbient = getList ambient !! index
   if condition indexOfAmbient then tryUnchanged else mov
   where
-    emptySpaces index = filter isBeEmpty $ catMaybes $ getAdjList index ambient
+    emptySpaces index = filter isFreePathByAgent $ catMaybes $ getAdjList index ambient
     condition index = isCorral index && isBeEmpty index && not (null $ emptySpaces $ fst' index)
     tryUnchanged =
       [ (index, Corral, Just Child),
@@ -139,7 +146,11 @@ robotWithChildMove ambient index = do
        in result
 
 pathToCorral :: Ambient -> Int -> Maybe [Int]
-pathToCorral ambient = bfs adj (condition . (getList ambient !!))
+pathToCorral ambient index =
+  let result = bfs adj (condition . (getList ambient !!) . fst) (index, [index])
+   in case result of
+        Nothing -> Nothing
+        Just value -> Just $ map fst value
   where
     condition x = isCorral x && isBeEmpty x
-    adj index = map fst' $ filter isFreePathByAgent $ catMaybes $ getAdjList index ambient
+    adj index = map (\x -> (fst' x, fst' x : snd index)) $ filter isFreePathByAgent $ catMaybes $ getAdjList (fst index) ambient

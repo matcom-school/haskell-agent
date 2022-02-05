@@ -53,7 +53,7 @@ analyzeChild ambient index =
 adjDirtPath :: Ambient -> Int -> Int
 adjDirtPath ambient index =
   let adjList = map fst' $ filter isFreePathByAgent $ catMaybes $ getAdjList index ambient
-      dirtValue = map (dfsDirt ambient [index]) adjList
+      dirtValue = filter (> 0) $ map (dfsDirt ambient [index]) adjList
    in if null dirtValue then index else fst $ maximumBy (comparing snd) $ zip adjList dirtValue
   where
     dfsDirt ambient visited index
@@ -61,8 +61,8 @@ adjDirtPath ambient index =
       | not $ isDirt $ getList ambient !! index = 0
       | otherwise =
         let adjList = filter isFreePathByAgent $ catMaybes $ getAdjList index ambient
-            results = map ((+ 1) . dfsDirt ambient (index : visited) . fst') adjList
-         in if null results then -1000 else maximumBy (comparing id) results
+            results = filter (> 0) $ map ((+ 1) . dfsDirt ambient (index : visited) . fst') adjList
+         in if null results then -1 else maximumBy (comparing id) results
 
 -- True if b perception is better of a
 comparePerceptions :: Int -> Perception -> Perception -> Bool
@@ -85,8 +85,11 @@ socialize ambient robotPerception = run robotPerception []
 
     tryMovToAlternativeRoute perception = selectBy (fst perception) (not . isDirt) (second getAlternativeRoute perception)
     tryMovToChildDirection perception childIndex =
-      let path = snd $ fromJust $ getBestPathTo (snd perception) childIndex
-       in selectBy (fst perception) (\_ -> length path < 3) (second (const (head path)) perception)
+      case getBestPathTo (snd perception) childIndex of
+        Nothing -> tryMovToAlternativeRoute perception
+        Just value ->
+          let path = snd value
+           in selectBy (fst perception) (\_ -> length path < 3) (second (const (head path)) perception)
 
     run [] selected = selected
     run (perception : rest) selected
@@ -134,8 +137,8 @@ robotWithChildMove ambient index = do
           cleanPlace = find (\x -> isClean x && isBeEmpty x) adjFree
           result
             | isClean robot && isJust dirtPlace = [setMemberInPlace ambient (fst' robot) $ Just Child, setMemberInPlace ambient (fst' $ fromJust dirtPlace) $ Just Robot]
-            | isClean robot && isJust cleanPlace = [setMemberInPlace ambient (fst' robot) $ Just Child, setMemberInPlace ambient (fst' $ fromJust dirtPlace) $ Just Robot]
-            | isDirt robot && isJust cleanPlace = [setMemberInPlace ambient (fst' robot) $ Just Robot, setMemberInPlace ambient (fst' $ fromJust dirtPlace) $ Just Child]
+            | isClean robot && isJust cleanPlace = [setMemberInPlace ambient (fst' robot) $ Just Child, setMemberInPlace ambient (fst' $ fromJust cleanPlace) $ Just Robot]
+            | isDirt robot && isJust cleanPlace = [setMemberInPlace ambient (fst' robot) $ Just Robot, setMemberInPlace ambient (fst' $ fromJust cleanPlace) $ Just Child]
             | otherwise = []
        in result
 

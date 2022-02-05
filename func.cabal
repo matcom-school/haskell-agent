@@ -25,7 +25,7 @@ executable func
     main-is:          Main.hs
 
     -- Modules included in this executable, other than Main.
-    other-modules:      Event, Ambient, Child, TupleHelper, Simulate, Statistics, Agent
+    other-modules:     Ambient, Child, TupleHelper, Simulate, Statistics, Agent
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions: 

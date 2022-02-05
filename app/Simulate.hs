@@ -23,7 +23,7 @@ simulate (n, m) (childAccount, robotAccount) t totalTime = do
 
 run :: (MonadIO m) => Ambient -> Int -> Int -> Int -> m [Ambient]
 run actualAmbient actualTime tFactor tTotal
-  | actualTime == tTotal = return []
+  | actualTime >= tTotal = return []
   | otherwise = do
     ambient <- getAmbient
     let ambientWithMovAgent = movAllAgents ambient
